@@ -42,6 +42,7 @@ This is used to encapsulate the following:
 1. The transaction id.
 2. a pointer to Conditional variable the thread is waiting on.
 3. a pointer to the Response field.
+4. an enum to show in which phase of 2PL the transaction is in. [GROWING, SHRINKING]
 #### Ownership:
 
 ### Lock Queue Entry
@@ -70,6 +71,7 @@ This represents a resource that is or will be locked by one or more transaction.
 1. A resource identifier
 2. left & right child pointers
 3. parent pointer
+4. a map for each locking mode that says 1. how many locks in the subtree are locked in this mode, 2. which transaction is the majority holder of locks in this mode.
 4. A set of accuired lists:
 
    - there will be a doubly linked list for each indivisual locking mode like: `Shared`, `eXclusive`, `Intention Shared`, `Intention Exclusive`, `Shared Intention eXclusive` etc.
@@ -88,7 +90,33 @@ This represents a resource that is or will be locked by one or more transaction.
 This will be owned by the lock tree and if all the queues are empty it will be cleaned up by the lock manager.
 
 ### Lock Trees
-### Transaction & all its locks.
+A lock tree will be a hearachy of locks like database_locks -> database_file_locks -> record_locks
+Its a red black BST with nodes that are the generic base class of all nodes.
 
+It will consist of a head pointer that will point to the first lock that is accuired. All transaction MUST accuire a read lock on the database, then some type of lock on the database file, then on database page. It is not allowed to accuire a lock directly on a page without first accuiring the lock on the file and the database. 
+
+This tree will be traversed from top to buttom by a lock accuire request. New nodes will be inserted if the resource is accuired for the first time.
+
+#### Lock Escalation:
+If we maintain two metadata about who is the majority lock holder below this lock level for each locking mode supported by a perticular node and the total number of locks in this subtree we can escalate the lock automatically if:
+1. the total number of locks crosses a certain threshold and
+2. We have a majority lock holder.
+
+For example, a transaction that is going to modify a billion records in one table. It would be very wasteful to try and accuire a billion locks.
+
+So each transaction must keep a record of all the locks it is holding so as to avoid asking for locks in a subtree when it already has a lock on the root of the subtree.
+
+A transaction must accomodate the fact that it can get a more coarse grained lock than it has requested.
+
+#### Ownership & Cleanup:
+The tree is owned by the Lock Manager and will be cleaned by by the same.
+
+### Transaction & all its locks.
+There will be a map: [Transaction Indentifier: 
+                        List of Accuired locks:[]
+                        List of locks its waiting on: []
+                     ]
+#### Ownership & Cleanup:
+This map will be owned by The lock manager and will be cleaned up when a transaction releases all its locks or if it aborts. 
 ## External Datastructures & Objects
 ### Request & Response object
